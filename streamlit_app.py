@@ -1,56 +1,73 @@
 import streamlit as st
-import pandas as pd 
-import numpy as np 
-import joblib
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
 
-scaler = joblib.load("scaler.pkl")
-le_gender = joblib.load("label_encoder_gender.pkl")
-le_diabetic = joblib.load("label_encoder_diabetic.pkl")
-le_smoker = joblib.load("label_encoder_smoker.pkl")
-model = joblib.load("best_model.pkl")
+st.set_page_config(page_title="Insurance Predictor", layout="centered")
 
-st.set_page_config(page_title = "Insurance Claim Predictor", layout="centered")
-st.title("Health Insurance Payment Prediction App")
-st.write("Enter the details below to estimate your insurance payment amount.")
+st.title("Health Insurance Cost Prediction")
 
-with st.form("input_form"):
-  col1,col2 = st.columns(2)
-  with col1:
-    age = st.number_input("Age",min_value = 0,max_value=100,value=30)
-    bmi = st.number_input("BMI",min_value=10.0,max_value=60.0,value=25.0)
-    childern = st.number_input("Number of Childern", min_value=0,max_value=8,value=0)
-  with col2:
-    bloodpressure = st.number_input("Blood Pressure", min_value=60,max_value=200,value=120)
-    gender = st.selectbox("Gender",options=le_gender.classes_)
-    diabetic=st.selectbox("Diabetic",option=le_diabetic.classes_)
-    smoker - st.selectbox("Smoker",options=le_smoker.classes_)
+# Load dataset
+@st.cache_data
+def load_data():
+    return pd.read_csv("insurance.csv")
 
-  submitted = st.form_submit_button("Predict Payment")
+data = load_data()
 
-if submitted:
-  input_data = pd.DataFrame({
-    "age" : [age],
-    "gender" : [gender],
-    "bmi" : [bmi],
-    "bloodpressure" : [bloodpressure],
-    "diabetic" : [diabetic],
-    "childern" : [children],
-    "smoker" : [smoker]
-  })
-  
-  input_data["gender"] = le_gender.transform(input_data["gender"])
-  input_data["diabetic"] = le_diabetic.transform(input_data["diabetic"])
-  input_data["smoker"] = le_smoker.transform(input_data["smoker"])
+# Preprocessing
+le_sex = LabelEncoder()
+le_smoker = LabelEncoder()
+le_region = LabelEncoder()
 
-  num_cols = ["age","bmi","bloodpressure","children"]
-  input_data[num_cols] = scaler.transform(input_data[num_cols])
+data["sex"] = le_sex.fit_transform(data["sex"])
+data["smoker"] = le_smoker.fit_transform(data["smoker"])
+data["region"] = le_region.fit_transform(data["region"])
 
-  prediction = model.Predict(input_data)[0]
+X = data.drop("charges", axis=1)
+y = data["charges"]
 
-  st.success(f"**Estimated Insurance Payment Amount:** ${prediction:,.2f}")
-  
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
 
+# Train model
+@st.cache_resource
+def train_model():
+    model = RandomForestRegressor(n_estimators=200, random_state=42)
+    model.fit(X_scaled, y)
+    return model
 
+model = train_model()
 
+# ---------------- UI ----------------
 
+with st.form("form"):
+    col1, col2 = st.columns(2)
 
+    with col1:
+        age = st.number_input("Age", 18, 100, 30)
+        bmi = st.number_input("BMI", 10.0, 60.0, 25.0)
+        children = st.number_input("Children", 0, 5, 0)
+
+    with col2:
+        sex = st.selectbox("Sex", le_sex.classes_)
+        smoker = st.selectbox("Smoker", le_smoker.classes_)
+        region = st.selectbox("Region", le_region.classes_)
+
+    submit = st.form_submit_button("Predict")
+
+if submit:
+    input_data = pd.DataFrame({
+        "age": [age],
+        "sex": [le_sex.transform([sex])[0]],
+        "bmi": [bmi],
+        "children": [children],
+        "smoker": [le_smoker.transform([smoker])[0]],
+        "region": [le_region.transform([region])[0]]
+    })
+
+    input_scaled = scaler.transform(input_data)
+    prediction = model.predict(input_scaled)[0]
+
+    st.success(f"Estimated Insurance Cost: ₹ {prediction:,.2f}")
